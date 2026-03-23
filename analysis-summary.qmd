@@ -1,0 +1,653 @@
+---
+title: "Analyses for Manuscript 'English and Spanish letter naming in bilingual children in English-only and dual language contexts' by Sanabria et al." 
+author: "Julian M. Siebert"
+date: 'Last updated on: `r Sys.Date()`'
+format:
+  html:
+    toc: true              # enable table of contents
+    toc-location: left     # make it float on the right
+    toc-floating: true     # floating TOC (sidebar)
+    number-sections: true  # optional: auto-number sections
+    code-fold: true        # optional: allow folding code blocks
+    page-layout: full      # page width: 'full', 'centered', or 'custom'
+    theme: default         # optional: or pick a custom theme
+    css: styles.css        # optional: use custom CSS if needed
+    toc-depth: 3           # optional: depth of TOC (1–6)
+    code-tools: true       # optional: adds show/hide/copy buttons for code
+    collapse-section: true # allow section folding
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Set global chunk options
+knitr::opts_chunk$set(
+  echo = FALSE,       # Show the code
+  warning = FALSE,    # Suppress warnings
+  message = FALSE,    # Suppress messages
+  cache = FALSE       # Store results
+)
+
+set.seed(1)
+
+options(tinytex.verbose = TRUE)
+
+library(lme4)
+library(gtsummary)
+library(flextable)
+library(readxl)
+library(ggpubr)
+library(effectsize)
+library(modelsummary)
+library(tidyverse)
+
+# set themes
+theme_set(theme_classic())
+theme_update(
+  panel.background = element_rect(fill = 'transparent'),
+  plot.background = element_rect(fill = 'transparent', color = NA),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  legend.background = element_rect(fill = 'transparent', color = NA),
+  legend.position = "bottom"
+)
+
+```
+
+```{r functions}
+# insert preferred plot function
+plot.accuracy <- function(data) {
+  plot <- data %>%
+    pivot_longer(cols = c(contains("pos")),
+                 names_to = "item",
+                 values_to = "score") %>% 
+    mutate(item = str_sub(item, 7, 9)) %>% 
+    rbind(
+      data %>%
+        pivot_longer(cols = c(contains("pos")),
+                     names_to = "item",
+                     values_to = "score") %>% 
+        mutate(item = str_sub(item, 7, 9)) %>% 
+        mutate(lang_inst = "Overall")
+    ) %>% 
+    group_by(item, lang_inst) %>% 
+    summarise(
+      n  = sum(!is.na(score)),
+      m  = round(mean(score, na.rm = TRUE), 2),
+      sd = round(sd(score, na.rm = TRUE), 2),
+      se = sd / sqrt(n),
+      .groups = "drop"
+    ) %>% 
+    unique() %>% 
+    left_join(
+      data %>% 
+        pivot_longer(cols = c(contains("pos")),
+                     names_to = "item",
+                     values_to = "score") %>% 
+        mutate(item = str_sub(item, 7, 9)) %>% 
+        group_by(item) %>% 
+        summarise(
+          m_all  = round(mean(score, na.rm = TRUE), 2),
+          .groups = "drop"
+        ) %>% 
+    unique() 
+    ) %>% 
+    ggplot(aes(x = reorder(item, -m_all), y = m, colour = lang_inst)) +
+    # geom_errorbar(aes(ymin = m - se, ymax = m + se), width = 0.2) +
+    geom_line(aes(group = item), colour = "gray50") +
+    geom_point(aes(y = m_all), size = 1.5, colour = "gray30") +
+    geom_point(size = 1.5) +
+    # geom_line(aes(y = m_all)) +
+    labs(x = " ",
+         y = "Mean Accuracy (Proportion Correct)",
+         colour = "Instructional Context"
+    ) +
+    scale_colour_manual(values = c("English" = "#0072B2", "Bilingual" = "#D55E00", "Overall" = "gray30")) +
+    guides(colour = guide_legend(override.aes = list(size = 4))) +
+    theme(
+      panel.grid.major.x = element_line(color = "gray90"),
+      axis.title.x = element_blank()
+      )
+  plot
+}
+
+plot.feature <- function(data, feature, featurename) {
+  
+  df_name <- deparse(substitute(data))
+  
+  if (featurename %in% c("Class", "Case", "Letter Name Similarity Across Languages",
+                         "Name Starts w/ Most Freq. Sound", "Name Has CV Structure")) {
+    
+    feature_vals <- as.character(pull(data, {{feature}}))
+    comparisons <- combn(unique(feature_vals), 2, simplify = FALSE)
+    # comparisons <- setdiff(comparisons, "Exact")
+  
+  plot <- data %>% 
+    unique() %>% 
+    ggplot(aes(x = {{feature}}, y = diff, colour = class))  +
+    # geom_jitter(width = .2, alpha = .5) +
+    geom_text(aes(label = item), 
+              position = position_jitter(width = 0.3, height = 0), 
+              alpha = 0.9, size = 3) +
+    geom_boxplot(width = .1, fill = "white", colour = "black", alpha = .6) +
+    # geom_signif(comparisons = comparisons,
+    #             annotations = "n.s.",
+    #             map_signif_level = TRUE,
+    #             textsize = 3, 
+    #             y_position = 0.98,
+    #             colour = "black") + 
+    facet_grid(cols = vars(lang.inst)) +
+    labs(x = paste(featurename),
+         y = "Mean Accuracy (Proportion Correct)"
+         # colour = "Case"
+    ) +
+    theme(legend.position = "none") +
+      scale_colour_manual(values = c("Consonant" = "black", "Vowel" = "darkred"))
+  
+  } else if (featurename %in% c("Log(Frequency)", "Visual Distractors (Average)")) {
+    
+    plot <- df.diff.lnf.en %>% 
+      unique() %>% 
+      ggplot(aes(x = {{feature}}, y = diff, colour = class))  +
+      # ggplot(aes(x = freq, y = diff))  +
+      geom_text(aes(label = item)) +
+      facet_grid(cols = vars(lang.inst)) +
+      labs(x = paste(featurename),
+           y = "Mean Accuracy (Proportion Correct)",
+      ) +
+      theme(legend.position = "none") +
+      scale_colour_manual(values = c("Consonant" = "black", "Vowel" = "darkred"))
+    
+  } else if (featurename == "Consonant Acquisition Order") {
+    
+    # if (grepl(df_name == "df.diff.lsf.en")) {
+    # }
+    plot <- data %>% 
+      unique() %>% 
+      ggplot(aes(x = {{feature}}, y = diff))  +
+      geom_text(aes(label = item), 
+                position = position_jitter(width = 0.2, height = 0), 
+                alpha = 0.8, size = 3) +
+      facet_grid(cols = vars(lang.inst)) +
+      labs(x = paste(featurename),
+           y = "Mean Accuracy (Proportion Correct)"
+      ) +
+      annotate("rect", xmin = 0.5, xmax = 1.5, ymin = -Inf, ymax = Inf, alpha = 0.2, fill = "lightgray") +
+      annotate("rect", xmin = 2.5, xmax = 3.5, ymin = -Inf, ymax = Inf, alpha = 0.2, fill = "lightgray") +
+      annotate("rect", xmin = 4.5, xmax = 5.5, ymin = -Inf, ymax = Inf, alpha = 0.2, fill = "lightgray") +
+      scale_x_continuous(breaks = c(1, 2, 3, 4, 5, 6))
+  }
+  plot +
+    scale_y_continuous(limits = c(0, 1)) +
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 8),
+        axis.text = element_text(size = 6),
+        strip.text = element_text(size = 6),    # facet labels
+        legend.text = element_text(size = 6),
+        legend.title = element_text(size = 6),
+        plot.title = element_text(size = 8)
+  )
+}
+
+plot.all <- function(data) {
+  p1 <- plot.feature(data, case, "Case")
+  p2 <- plot.feature(data, class, "Class")
+  p3 <- plot.feature(data, cross.lg.vis.sim, "Letter Name Similarity Across Languages")
+  p4 <- plot.feature(data, cons.acq.order, "Consonant Acquisition Order")
+  p5 <- plot.feature(data, log_freq, "Log(Frequency)")
+  p6 <- plot.feature(data, avg.vis.sim, "Visual Distractors (Average)")
+  p7 <- plot.feature(data, name.start.common, "Name Starts w/ Most Freq. Sound")
+  p8 <- plot.feature(data, name.cv, "Name Has CV Structure")
+  print(
+  ggarrange(
+    p1, p2, p3, p4, p5, p6, p7, p8,
+    labels = "AUTO",
+  nrow = 2, ncol = 4)
+)
+}
+
+```
+
+```{r load-data}
+df.codes.lnf.en <- read_csv("data/df-codes-lnf-en.csv")
+df.codes.lnf.es <- read_csv("data/df-codes-lnf-es.csv")
+
+# LNF_E ======
+df.lnf.en <- read_csv("data/df-lnf-en.csv")
+df.diff.lnf.en <- read_csv("data/df-diff-lnf-en.csv")
+
+df.lnf.es <- read_csv("data/df-lnf-es.csv")
+df.diff.lnf.es <- read_csv("data/df-diff-lnf-es.csv")
+
+df.sample <- read_csv("data/df-sample.csv")
+```
+
+# Sample
+
+```{r}
+#| label: tbl-sample
+#| tbl-cap: "Sample Characteristics by Instructional Context and Task \\newline"
+
+df.sample %>% 
+  filter(student_id %in% c(unique(df.lnf.en$student_id), unique(df.lnf.es$student_id))) %>% 
+  select(-c(student_id, event, testdate, format, language, district, school, num_correct, num_named, grade)) %>% 
+  mutate(lang_inst = paste0(lang_inst, " Instruction"),
+         lang_inst = factor(lang_inst, levels = c("English Instruction", "Bilingual Instruction"))) %>% 
+  tbl_strata(strata = "lang_inst",
+             .tbl_fun =
+               ~ .x |>
+               tbl_summary(by = "task",
+                           label = list(ethnicity = "Hispanic/Latin(o/a)",
+                                        race = "Race",
+                                        ever_disability = "Ever IEP/504 Plan",
+                                        el = "English Proficiency Designation",
+                                        gender = "Gender",
+                                        home_lang = "Home Language"
+                                        )
+                           )
+             )
+```
+
+\FloatBarrier
+
+# English Letter Naming Fluency
+
+## Item Difficulty (Proportion Correct) By Letter & Instructional Context
+
+```{r out.width='100%', fig.height=4}
+#| label: fig-acc-lnf-en
+#| fig-cap: "Mean Accuracy (Proportion of Correct Responses) by Instructional Context for the English Letter Naming Fluency Task, Ranked By Overall Mean Accuracy."
+plot.accuracy(df.lnf.en)
+```
+
+\newpage
+
+```{=html}
+<div style="text-align: right; margin-bottom: 0.5em;">
+  <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#lnf-en-table">
+    ▼ Show/Hide Table
+  </button>
+</div>
+<div class="collapse" id="lnf-en-table">
+```
+
+```{r tbl-acc-lnf-en}
+#| label: tbl-acc-lnf-en
+#| tbl-cap: "Mean Accuracies for the English Letter Naming Fluency Task."
+df.lnf.en %>%
+  pivot_longer(cols = c(contains("pos")),
+               names_to = "item",
+               values_to = "score") %>% 
+  mutate(item = str_sub(item, 7, 9)) %>% 
+  rbind(
+    df.lnf.en %>%
+      mutate(lang_inst = "All") %>% 
+      pivot_longer(cols = c(contains("pos")),
+                   names_to = "item",
+                   values_to = "score") %>% 
+      mutate(item = str_sub(item, 7, 9))
+  ) %>% 
+  group_by(item, lang_inst) %>% 
+  summarise(n  = sum(!is.na(score)),
+            m  = round(mean(score, na.rm = TRUE), 2),
+            sd = round(sd(score, na.rm = TRUE), 2)
+  ) %>% 
+  pivot_wider(names_from = lang_inst, values_from = c(n, m, sd)) %>% 
+  select(c(item, contains("All"), contains("English"), contains("Bilingual"))) %>% 
+  arrange(desc(`m_All`)) %>% 
+  flextable() %>%
+  set_header_labels(
+    item = "Item",
+    n_All = "n", m_All = "M", sd_All = "SD",
+    n_English = "n", m_English = "M", sd_English = "SD",
+    n_Bilingual = "n", m_Bilingual = "M", sd_Bilingual = "SD"
+  ) %>%
+  add_header_row(values = c("", "Overall", "English Instruction", "Bilingual Instruction"),
+                 colwidths = c(1, 3, 3, 3)) %>%
+  align(align = "center", part = "all") %>%
+  autofit()
+```
+
+```{r tbl-features-en}
+df.diff.lnf.en %>% 
+  mutate(lang = "English") %>% 
+  select(-`factor(cross.lg.vis.sim, levels = c(\"Dissimilar\", \"Similar\"))`) %>% 
+  rbind(df.diff.lnf.es %>% 
+          mutate(lang = "Spanish")
+          ) %>% 
+  select(-c(lang.inst, diff)) %>% 
+  unique() %>% 
+  mutate(vowel = case_when(class == "Vowel" ~ 1,
+                           class == "Consonant" ~ 0),
+         uppercase = case_when(case == "Uppercase" ~ 1,
+                               case == "Lowercase" ~ 0),
+         cross.lg.vis.sim = case_when(cross.lg.vis.sim == "Similar" ~ 1,
+                                      cross.lg.vis.sim == "Dissimilar" ~ 0),
+         ) %>% 
+  select(c(lang,
+           freq,
+           avg.vis.sim,
+           cross.lg.vis.sim,
+           uppercase,
+           vowel,
+           name.cv
+  )
+  ) %>% 
+  tbl_strata(strata = lang,
+             .tbl_fun =
+               ~ .x %>%
+               tbl_summary(
+                 statistic = all_continuous() ~ "{mean} ({sd})"
+               )
+  )
+```
+
+</div>
+
+\blandscape
+
+## Descriptives of Individual Features
+
+```{r fig.width=8, fig.height=5}
+#| label: fig-features-lnf-en
+#| fig-cap: "Mean Accuracy (Proportion of Correct Responses) by Instructional Context and Item Features for the English Letter Naming Fluency Task."
+plot.all(df.diff.lnf.en)
+```
+
+\elandscape
+
+\FloatBarrier
+
+## Regressions
+
+These are generalized linear mixed models (implemented with the `lmer` package in R), with random effects for item and student.
+
+```{r regressions-lnf-en}
+df.reg.lnf.en <- df.lnf.en %>%
+      filter(!is.na(lang_inst)) %>%
+      pivot_longer(cols = c(contains("pos")),
+                   names_to = "item",
+                   values_to = "score") %>%
+      mutate(item = str_sub(item, 7, 9)) %>% 
+  unique() %>% 
+  left_join(df.codes.lnf.en) %>% 
+  unique() %>% 
+  select(-c(language, event)) %>%
+  # scale continuous variables
+  mutate(across(c(freq, avg.vis.sim), scale)) %>% 
+  mutate(
+         student_id = factor(student_id),
+         item = factor(item),
+         )
+  
+data <- df.reg.lnf.en %>% filter(lang_inst == "English")
+glmm.1 <- glmer(score ~ gender + case + class + freq + avg.vis.sim + cross.lg.vis.sim + name.cv + (1 | student_id) + (1 | item),
+              data = data,
+              family = binomial(link = "logit"),
+              control = glmerControl(optimizer = "bobyqa")
+              )
+
+data <- df.reg.lnf.en %>% filter(lang_inst == "Bilingual")
+glmm.2 <- glmer(score ~ gender + case + class + freq + avg.vis.sim + cross.lg.vis.sim + name.cv + (1 | student_id) + (1 | item),
+              data = data,
+              family = binomial(link = "logit"),
+              control = glmerControl(optimizer = "bobyqa")
+              )
+
+stdcoefs.1 <- standardize_parameters(glmm.1)
+stdcoefs.2 <- standardize_parameters(glmm.2)
+modelsummary(
+  list("English Instruction" = glmm.1, "Bilingual Instruction" = glmm.2),
+  statistic = "conf.int",
+  coef_rename = c(
+    "genderMale" = "Gender (Male)",
+    "caseUppercase" = "Case (Upper)",
+    "classConsonant" = "Class (Consonant)",
+    "freq" = "Frequency",
+    "avg.vis.sim" = "Visual Distractors (Average)",
+    "cross.lg.vis.simSimilar" = "Letter Name Similarity Across Languages (Similar)",
+    "cross.lg.vis.simExact" = "Letter Name Similarity Across Languages (Exact)",
+    "name.start.commonNo" = "Letter Name Starts w/ Most Frequent Sound (No)",
+    "name.cvNo" = "Letter Name Has CV Structure (No)"
+  ),
+  conf_format = "[{conf.low}, {conf.high}]",
+  coef_override = list("English instruction" = stdcoefs.1, "Bilingual Instruction" = stdcoefs.2),
+  stars = c('*' = 0.05, '**' = 0.01, '***' = 0.001),
+  gof_omit = "AIC|BIC"
+)
+```
+
+
+## Additional Analyses
+
+### Checking Balance of Item Features by CV-Name (Table)
+
+```{r cv-balancing-analyses-en}
+df.temp <- df.diff.lnf.en %>% 
+  select(-c(lang.inst, diff)) %>% 
+  unique() %>% 
+  select(c(name.cv, case, class, cross.lg.vis.sim, freq, avg.vis.sim))
+
+df.temp %>% 
+  tbl_summary(by = name.cv) %>% 
+  add_p(
+    test = list(
+      case ~ "chisq.test",
+      class ~ "chisq.test",
+      cross.lg.vis.sim ~ "chisq.test",
+      all_continuous() ~ "t.test"
+    ),
+    test.args = all_tests("t.test") ~ list(var.equal = TRUE)
+  ) %>% 
+  add_stat(
+    fns = list(
+      all_continuous() ~ function(data, variable, by, ...) {
+        t.test(data[[variable]] ~ data[[by]], var.equal = TRUE)$statistic
+      },
+      all_categorical() ~ function(data, variable, by, ...) {
+        chisq.test(table(data[[variable]], data[[by]]))$statistic
+      }
+    )
+  ) 
+```
+
+### Direct Chi-squared Tests
+
+```{r}
+with(df.temp, chisq.test(table(case, name.cv)))
+with(df.temp, chisq.test(table(class, name.cv)))
+with(df.temp, chisq.test(table(cross.lg.vis.sim, name.cv)))
+```
+
+### Differences in Frequency and Visual Similarity by CV-Name
+
+```{r t-tests-cv-en}
+t.test(freq ~ name.cv, data = df.temp, var.equal = TRUE)
+t.test(avg.vis.sim ~ name.cv, data = df.temp, var.equal = TRUE)
+```
+
+### Comparing Scores by Instructional Context
+
+```{r score-comparison-by-context-en}
+t.test(num_correct ~ lang_inst, data = df.lnf.en, var.equal = TRUE)
+```
+
+
+# Spanish Letter Naming Fluency
+
+## Item Difficulty (Proportion Correct) By Letter & Instructional Context
+
+```{r out.width='100%', fig.height=4}
+#| label: fig-acc-lnf-es
+#| fig-cap: "Mean Accuracy (Proportion of Correct Responses) by Instructional Context for the Spanish Letter Naming Fluency Task, Ranked By Overall Mean Accuracy."
+plot.accuracy(df.lnf.es)
+```
+
+\newpage
+
+```{=html}
+<div style="text-align: right; margin-bottom: 0.5em;">
+  <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#lnf-es-table">
+    ▼ Show/Hide Table
+  </button>
+</div>
+<div class="collapse" id="lnf-es-table">
+```
+
+```{r tbl-acc-lnf-es}
+#| label: tbl-acc-lnf-es
+#| tbl-cap: "Mean Accuracies for the Spanish Letter Naming Fluency Task."
+df.lnf.es %>%
+  pivot_longer(cols = c(contains("pos")),
+               names_to = "item",
+               values_to = "score") %>% 
+  mutate(item = str_sub(item, 7, 9)) %>% 
+  rbind(
+    df.lnf.es %>%
+      mutate(lang_inst = "All") %>% 
+      pivot_longer(cols = c(contains("pos")),
+                   names_to = "item",
+                   values_to = "score") %>% 
+      mutate(item = str_sub(item, 7, 9))
+  ) %>% 
+  group_by(item, lang_inst) %>% 
+  summarise(n  = sum(!is.na(score)),
+            m  = round(mean(score, na.rm = TRUE), 2),
+            sd = round(sd(score, na.rm = TRUE), 2)
+  ) %>% 
+  pivot_wider(names_from = lang_inst, values_from = c(n, m, sd)) %>% 
+  select(c(item, contains("All"), contains("English"), contains("Bilingual"))) %>% 
+  arrange(desc(`m_All`)) %>% 
+  flextable() %>%
+  set_header_labels(
+    item = "Item",
+    n_All = "n", m_All = "M", sd_All = "SD",
+    n_English = "n", m_English = "M", sd_English = "SD",
+    n_Bilingual = "n", m_Bilingual = "M", sd_Bilingual = "SD"
+  ) %>%
+  add_header_row(values = c("", "Overall", "English Instruction", "Bilingual Instruction"),
+                 colwidths = c(1, 3, 3, 3)) %>%
+  align(align = "center", part = "all") %>%
+  autofit()
+```
+
+</div>
+
+\blandscape
+
+## Descriptives of Individual Features
+
+```{r fig.width=8, fig.height=5}
+#| label: fig-features-lnf-es
+#| fig-cap: "Mean Accuracy (Proportion of Correct Responses) by Instructional Context and Item Features for the Spanish Letter Naming Fluency Task."
+plot.all(df.diff.lnf.es)
+```
+
+\elandscape
+\FloatBarrier
+
+## Regressions
+
+```{r regressions-lnf-es}
+df.reg.lnf.es <- df.lnf.es %>%
+      filter(!is.na(lang_inst)) %>%
+      pivot_longer(cols = c(contains("pos")),
+                   names_to = "item",
+                   values_to = "score") %>%
+      mutate(item = str_sub(item, 7, 9)) %>% 
+  unique() %>% 
+  left_join(df.codes.lnf.es) %>% 
+  unique() %>% 
+  select(-c(language, event)) %>%
+  # scale continuous variables
+  mutate(across(c(freq, avg.vis.sim), scale)) %>% 
+  mutate(student_id = factor(student_id),
+         item = factor(item),
+         )
+  
+glmm.1 <- glmer(score ~ gender + case + class + freq + avg.vis.sim + cross.lg.vis.sim +  name.cv + (1 | student_id) + (1 | item),
+              data = df.reg.lnf.es %>% filter(lang_inst == "English"),
+              family = binomial(link = "logit"),
+              control = glmerControl(optimizer = "bobyqa")
+              )
+
+glmm.2 <- glmer(score ~ gender + case + class + freq + avg.vis.sim + cross.lg.vis.sim +  name.cv + (1 | student_id) + (1 | item),
+              data = df.reg.lnf.es %>% filter(lang_inst == "Bilingual"),
+              family = binomial(link = "logit"),
+              control = glmerControl(optimizer = "bobyqa")
+              )
+
+stdcoefs.1 <- standardize_parameters(glmm.1)
+stdcoefs.2 <- standardize_parameters(glmm.2)
+modelsummary(
+  list("English instruction" = glmm.1, "Bilingual Instruction" = glmm.2),
+  statistic = "conf.int",
+  coef_rename = c(
+    "genderMale" = "Gender (Male)",
+    "caseUppercase" = "Case (Upper)",
+    "classConsonant" = "Class (Consonant)",
+    "freq" = "Frequency",
+    "avg.vis.sim" = "Visual Distractors (Average)",
+    "cross.lg.vis.simSimilar" = "Letter Name Similarity Across Languages (Similar)",
+    "cross.lg.vis.simExact" = "Letter Name Similarity Across Languages (Exact)",
+    "name.start.commonNo" = "Letter Name Starts w/ Most Frequent Sound (No)",
+    "name.cvNo" = "Letter Name Has CV Structure (No)"
+  ),
+  conf_format = "[{conf.low}, {conf.high}]",
+  coef_override = list("English Instruction" = stdcoefs.1, "Bilingual Instruction" = stdcoefs.2),
+  stars = c('*' = 0.05, '**' = 0.01, '***' = 0.001),
+  gof_omit = "AIC|BIC"
+)
+```
+## Additional Analyses
+
+### Checking Balance of Item Features by CV-Name (Table)
+
+```{r cv-balancing-analyses-es}
+df.temp <- df.diff.lnf.es %>% 
+  select(-c(lang.inst, diff)) %>% 
+  unique() %>% 
+  select(c(name.cv, case, class, cross.lg.vis.sim, freq, avg.vis.sim))
+
+df.temp %>% 
+  tbl_summary(by = name.cv) %>% 
+  add_p(
+    test = list(
+      case ~ "chisq.test",
+      class ~ "chisq.test",
+      cross.lg.vis.sim ~ "chisq.test",
+      all_continuous() ~ "t.test"
+    ),
+    test.args = all_tests("t.test") ~ list(var.equal = TRUE)
+  ) %>% 
+  add_stat(
+    fns = list(
+      all_continuous() ~ function(data, variable, by, ...) {
+        t.test(data[[variable]] ~ data[[by]], var.equal = TRUE)$statistic
+      },
+      all_categorical() ~ function(data, variable, by, ...) {
+        chisq.test(table(data[[variable]], data[[by]]))$statistic
+      }
+    )
+  ) %>% 
+  modify_header(stat_1 = "**Test statistic**")
+```
+
+### Direct Chi-squared Tests
+
+```{r}
+with(df.temp, chisq.test(table(case, name.cv)))
+with(df.temp, chisq.test(table(class, name.cv)))
+with(df.temp, chisq.test(table(cross.lg.vis.sim, name.cv)))
+```
+
+### Differences in Frequency and Visual Similarity by CV-Name
+
+```{r  t-tests-cv-es}
+t.test(freq ~ name.cv, data = df.temp, var.equal = TRUE)
+t.test(avg.vis.sim ~ name.cv, data = df.temp, var.equal = TRUE)
+```
+
+### Comparing Scores by Instructional Context
+
+```{r score-comparison-by-context-es}
+t.test(num_correct ~ lang_inst, data = df.lnf.es, var.equal = TRUE)
+```
